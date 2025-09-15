@@ -1,0 +1,14 @@
+# Core HTML parsing dependencies
+beautifulsoup4==4.12.2
+lxml==6.0.1
+soupsieve==2.8
+
+# GUI dependencies (for GUI module only)
+# tkinter - Usually included with Python, but may need separate installation
+# Note: tkinter is part of Python standard library but may require system packages
+
+# For Python installations that don't include tkinter:
+# - Ubuntu/Debian: sudo apt-get install python3-tk
+# - CentOS/RHEL: sudo yum install tkinter
+# - macOS: brew install python-tk (if using Homebrew Python)
+# - Windows: tkinter should be included with Python installer

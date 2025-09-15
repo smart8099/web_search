@@ -1,0 +1,120 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+*.spec
+
+# Virtual environments
+venv/
+ENV/
+env/
+.venv
+.env
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb_checkpoints/
+
+# Data files
+*.csv
+*.json
+*.xml
+*.txt
+!requirements.txt
+!README.txt
+data/
+datasets/
+corpus/
+indexes/
+cache/
+
+# Model files
+*.pkl
+*.pickle
+*.h5
+*.hdf5
+*.model
+*.bin
+*.pt
+*.pth
+*.ckpt
+models/
+checkpoints/
+
+# Logs
+*.log
+logs/
+*.out
+*.err
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Claude related
+CLAUDE.md
+.claude/
+claude-code/
+.claude-code/
+*.claude.*
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+
+# Database
+*.db
+*.sqlite
+*.sqlite3
+
+# Documentation build
+docs/_build/
+docs/.doctrees/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+.hypothesis/
+
+# Project specific
+results/
+output/
+temp/
+tmp/
+scratch/
+experiments/
+
+# Large files
+*.tar
+*.tar.gz
+*.rar
+*.7z
+
+# System files
+Thumbs.db
+desktop.ini
