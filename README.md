@@ -2,23 +2,17 @@
 
 **CSCI 6373 - Advanced Information Retrieval System**
 
-A comprehensive information retrieval system implementing HTML document indexing, efficient search algorithms, and both console and GUI interfaces for academic coursework.
+A comprehensive information retrieval system implementing HTML document indexing, efficient search algorithms, and Google-style search interface for academic coursework.
 
 ## 🚀 Quick Start
 
-### Option 1: Auto Launcher (Recommended)
+### Run the Applications
 ```bash
-python3 main_auto.py
-# Automatically detects and launches best available version
-```
+# GUI version with Google-style interface (recommended)
+python3 gui_app.py
 
-### Option 2: Specific Version
-```bash
 # Console version (always works)
-python3 main.py
-
-# GUI version (requires tkinter)  
-python3 main_gui.py
+python3 console_app.py
 ```
 
 ### Option 3: Run Tests
@@ -77,21 +71,24 @@ class ConsoleApp:
             # Display: "found a match: file1.html file2.html" or "no match"
 ```
 
-### GUI Interface (`gui_app.py`) 
+### Google-Style GUI (`gui_app.py`)
 ```python
 class GuiApp:
-    search_mode: str  # "center" → "top" transition
-    
-    def _create_center_layout(self)     # Initial centered search
-    def _create_results_layout(self)    # Card-based results view
+    def _create_ui(self)                # Google-style interface
+    def _on_search(self)               # Handle search with results cards
+    def _view_file(self)               # File content with highlighting
+
+class GoogleResultCard:
+    def _create_google_layout(self)    # Blue titles, green URLs, gray text
 ```
 
-**GUI Features:**
-- **Dynamic layout** transitions (center → top)
-- **Card-based results** with metadata
-- **File content preview** with search highlighting  
-- **Real-time statistics** and loading animations
-- **Modern Material Design** theming
+**Google-Style Features:**
+- **Blue clickable titles** (#1a0dab) with hover effects
+- **Green document URLs** (#006621) showing file IDs
+- **Gray description snippets** (#545454) with metadata
+- **Vertical card stacking** exactly like Google search
+- **Search term highlighting** in document preview
+- **Star badges** for high relevance scores (>0.5)
 
 ## 📊 Performance Metrics
 
@@ -144,20 +141,21 @@ pip install beautifulsoup4 lxml
 │   ├── main.py             # Console entry point  
 │   └── console_app.py      # Interactive CLI
 │
-├── 🎨 GUI MODULE  
-│   ├── gui_app.py          # Main GUI application
-│   ├── gui_components.py   # Reusable UI widgets
-│   ├── gui_styles.py       # Material Design theming
-│   └── main_gui.py         # GUI entry point
+├── 🎨 GUI MODULE
+│   ├── gui_app.py          # Google-style GUI application
+│   ├── gui_components.py   # UI widgets and file content dialog
+│   ├── gui_styles.py       # Styling system (legacy)
+│   └── query_processor.py  # Advanced query processing
 │
 ├── 🧪 TESTING SUITE
 │   ├── tests/test_*.py     # 42 comprehensive tests
 │   ├── run_tests.py        # Advanced test runner
 │   └── TEST_README.md      # Testing documentation
 │
-├── 🚀 LAUNCHERS
-│   ├── main_auto.py        # Smart auto-launcher
-│   └── requirements.txt    # Dependency specification
+├── 🚀 UTILITIES
+│   ├── data_structure_diagram.py        # Legacy Part 2 visualization
+│   ├── google_style_ascii_diagram.py    # Google-style architecture docs
+│   └── requirements.txt                 # Dependency specification
 │
 └── 📚 DOCUMENTATION
     ├── README.md           # This file
@@ -200,12 +198,12 @@ enter a search key=>
 Bye
 ```
 
-### GUI Version (when tkinter available)
-1. **Startup**: Centered search with loading animation
-2. **Search**: Enter term → dynamic transition to results
-3. **Results**: Card grid with file metadata
-4. **Preview**: Click "View Content" → popup with highlighting
-5. **New Search**: "New Search" button → return to center
+### Google-Style GUI Version
+1. **Startup**: Google-style interface with initialization status
+2. **Search**: Enter term → displays results in vertical cards
+3. **Results**: Google-style cards with blue titles, green URLs, gray descriptions
+4. **Preview**: Click "📖 View Content" → popup with yellow highlighting
+5. **Highlighting**: Supports quoted phrases ("web page") and individual terms
 
 ## 🏆 Technical Excellence
 

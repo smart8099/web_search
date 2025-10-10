@@ -1,470 +1,449 @@
 """
-GUI Application for HTML Search Engine
+GUI Application for HTML Search Engine - Google Style
 
-This module provides the main graphical user interface for the HTML search engine,
-featuring a dynamic layout that transitions from centered search to results view.
+This module provides a Google-style search interface with blue titles, green URLs,
+and gray description snippets in a clean vertical layout.
 """
 
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, scrolledtext
 import threading
 import zipfile
 from typing import Optional, List, Dict, Any
 from html_indexer import HtmlIndexer
-from gui_styles import (
-    COLORS, SIZES, SPACING, ICONS, LAYOUTS, TTK_STYLES,
-    get_font, get_spacing, apply_ttk_styles
-)
-from gui_components import (
-    SearchEntry, ResultCard, StatsPanel, LoadingLabel, 
-    FileContentDialog, ScrollableFrame
-)
+from query_processor import QueryProcessor, QueryResult
+
+
+class GoogleResultCard(tk.Frame):
+    """Google-style search result card."""
+
+    def __init__(self, parent, filename, word_count, relevance_score=0.0, on_view=None, **kwargs):
+        super().__init__(parent, bg='white', relief='flat', **kwargs)
+
+        self.filename = filename
+        self.word_count = word_count
+        self.relevance_score = relevance_score
+        self.on_view = on_view
+
+        self._create_google_layout()
+
+    def _create_google_layout(self):
+        """Create Google-style layout."""
+        self.grid_columnconfigure(0, weight=1)
+
+        # Main content frame
+        content_frame = tk.Frame(self, bg='white')
+        content_frame.grid(row=0, column=0, sticky='nsew', padx=24, pady=12)
+        content_frame.grid_columnconfigure(0, weight=1)
+
+        # Title (Blue, clickable) - GOOGLE STYLE
+        title_label = tk.Label(
+            content_frame,
+            text=self.filename,
+            font=('Arial', 18, 'normal'),
+            fg='#1a0dab',  # Google result blue
+            bg='white',
+            cursor='hand2',
+            anchor='w'
+        )
+        title_label.grid(row=0, column=0, sticky='ew', pady=(0, 2))
+
+        # Hover effects
+        def title_enter(e):
+            title_label.config(font=('Arial', 18, 'underline'))
+        def title_leave(e):
+            title_label.config(font=('Arial', 18, 'normal'))
+        def title_click(e):
+            if self.on_view:
+                self.on_view(self.filename)
+
+        title_label.bind('<Enter>', title_enter)
+        title_label.bind('<Leave>', title_leave)
+        title_label.bind('<Button-1>', title_click)
+
+        # URL line (Green) - GOOGLE STYLE
+        url_label = tk.Label(
+            content_frame,
+            text=f"📄 Document ID: {self.filename}",
+            font=('Arial', 12, 'normal'),
+            fg='#006621',  # Google URL green
+            bg='white',
+            anchor='w'
+        )
+        url_label.grid(row=1, column=0, sticky='ew', pady=(0, 4))
+
+        # Description (Gray) - GOOGLE STYLE
+        snippet_parts = [f"Document contains {self.word_count} words"]
+        if self.relevance_score > 0:
+            snippet_parts.append(f"Relevance score: {self.relevance_score:.3f}")
+        snippet_text = " • ".join(snippet_parts)
+
+        snippet_label = tk.Label(
+            content_frame,
+            text=snippet_text,
+            font=('Arial', 13, 'normal'),
+            fg='#545454',  # Google description gray
+            bg='white',
+            anchor='w',
+            wraplength=600
+        )
+        snippet_label.grid(row=2, column=0, sticky='ew', pady=(0, 8))
+
+        # Action buttons
+        actions_frame = tk.Frame(content_frame, bg='white')
+        actions_frame.grid(row=3, column=0, sticky='w')
+
+        view_btn = tk.Button(
+            actions_frame,
+            text='📖 View Content',
+            font=('Arial', 11, 'normal'),
+            bg='#f8f9fa',
+            fg='#3c4043',
+            relief='flat',
+            bd=0,
+            padx=10,
+            pady=5,
+            cursor='hand2',
+            command=lambda: self.on_view(self.filename) if self.on_view else None
+        )
+        view_btn.pack(side=tk.LEFT)
+
+        # Star badge for high scores
+        if self.relevance_score > 0.5:
+            score_badge = tk.Label(
+                actions_frame,
+                text=f'⭐ {self.relevance_score:.2f}',
+                font=('Arial', 11, 'normal'),
+                fg='#ea4335',  # Google red
+                bg='white'
+            )
+            score_badge.pack(side=tk.LEFT, padx=(10, 0))
 
 
 class GuiApp:
-    """
-    Main GUI application class for the HTML Search Engine.
-    
-    This class manages the dynamic interface that transforms from a centered
-    search view to a results display with card-based layout.
-    """
-    
+    """Google-style search engine GUI."""
+
     def __init__(self, zip_path: str = "Jan.zip"):
-        """
-        Initialize the GUI application.
-        
-        Args:
-            zip_path: Path to the zip file containing HTML files
-        """
         self.zip_path = zip_path
         self.indexer: Optional[HtmlIndexer] = None
+        self.query_processor: Optional[QueryProcessor] = None
         self.is_initialized = False
-        self.current_search_term = ""
-        self.current_results: List[str] = []
-        
-        # UI state management
-        self.search_mode = "center"  # "center" or "top"
-        self.widgets = {}
-        
+        self.current_results: List[QueryResult] = []
+
         self._create_main_window()
-        self._setup_styles()
         self._create_ui()
         self._start_initialization()
         
     def _create_main_window(self):
         """Create and configure the main application window."""
         self.root = tk.Tk()
-        self.root.title("HTML Search Engine")
-        self.root.configure(bg=COLORS['background'])
-        
-        # Set window size and minimum size
-        self.root.geometry(f"{SIZES['window_default_width']}x{SIZES['window_default_height']}")
-        self.root.minsize(SIZES['window_min_width'], SIZES['window_min_height'])
-        
-        # Center the window on screen
-        self._center_window()
-        
+        self.root.title("HTML Search Engine - Google Style")
+        self.root.geometry("1000x700")
+        self.root.configure(bg='white')
+
         # Configure main grid
         self.root.grid_columnconfigure(0, weight=1)
         self.root.grid_rowconfigure(0, weight=1)
         
-    def _center_window(self):
-        """Center the main window on the screen."""
-        self.root.update_idletasks()
-        width = self.root.winfo_width()
-        height = self.root.winfo_height()
-        x = (self.root.winfo_screenwidth() // 2) - (width // 2)
-        y = (self.root.winfo_screenheight() // 2) - (height // 2)
-        self.root.geometry(f"{width}x{height}+{x}+{y}")
-        
-    def _setup_styles(self):
-        """Setup TTK styles for the application."""
-        self.style = ttk.Style()
-        
-        # Apply custom styles
-        apply_ttk_styles(self.style)
-        
-        # Add hover effect for cards
-        self.style.configure(
-            'CardHover.TFrame',
-            background=COLORS['card_hover'],
-            bordercolor=COLORS['border_focus'],
-            relief='solid',
-            borderwidth=1
-        )
-        
     def _create_ui(self):
-        """Create the main user interface."""
-        # Main container
-        self.main_frame = ttk.Frame(self.root)
-        self.main_frame.grid(row=0, column=0, sticky='nsew', padx=get_spacing('lg'), pady=get_spacing('lg'))
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(0, weight=1)
-        
-        # Create initial centered layout
-        self._create_center_layout()
-        
-    def _create_center_layout(self):
-        """Create the initial centered search layout."""
-        # Center container
-        center_frame = ttk.Frame(self.main_frame)
-        center_frame.grid(row=0, column=0, sticky='nsew')
-        center_frame.grid_columnconfigure(0, weight=1)
-        center_frame.grid_rowconfigure(0, weight=1)
-        
-        # Content frame (centered)
-        content_frame = ttk.Frame(center_frame)
-        content_frame.grid(row=0, column=0)
-        content_frame.grid_columnconfigure(0, weight=1)
-        
-        # Title
-        title_label = ttk.Label(
-            content_frame,
-            text="HTML Search Engine",
-            style='Title.TLabel'
+        """Create the Google-style UI."""
+        # Header
+        header_frame = tk.Frame(self.root, bg='white')
+        header_frame.grid(row=0, column=0, sticky='ew', padx=20, pady=(20, 10))
+
+        title_label = tk.Label(
+            header_frame,
+            text="🔍 HTML Search Engine",
+            font=('Arial', 24, 'bold'),
+            fg='#202124',
+            bg='white'
         )
-        title_label.grid(row=0, column=0, pady=(0, get_spacing('xxl')))
-        
-        # Search entry
-        self.widgets['search_entry'] = SearchEntry(
-            content_frame,
-            placeholder="Search for terms...",
-            on_search=self._on_search
+        title_label.pack()
+
+        subtitle_label = tk.Label(
+            header_frame,
+            text="Google-Style Search Results",
+            font=('Arial', 14, 'normal'),
+            fg='#5f6368',
+            bg='white'
         )
-        self.widgets['search_entry'].grid(row=1, column=0, sticky='ew', pady=(0, get_spacing('lg')))
-        
-        # Loading label
-        self.widgets['loading_label'] = LoadingLabel(
-            content_frame,
-            text="Initializing search engine",
-            font=get_font('body'),
-            foreground=COLORS['text_secondary']
-        )
-        self.widgets['loading_label'].grid(row=2, column=0, pady=(0, get_spacing('md')))
-        
-        # Stats panel
-        self.widgets['stats_panel'] = StatsPanel(content_frame)
-        self.widgets['stats_panel'].grid(row=3, column=0, pady=get_spacing('lg'))
-        
-        # Initially disable search
-        self.widgets['search_entry'].search_btn.config(state='disabled')
-        
-        # Store references for layout switching
-        self.center_frame = center_frame
-        self.content_frame = content_frame
-        
-    def _create_results_layout(self):
-        """Create the results layout with search at top."""
-        # Clear center layout
-        self.center_frame.destroy()
-        
-        # Create top layout
-        top_frame = ttk.Frame(self.main_frame)
-        top_frame.grid(row=0, column=0, sticky='nsew')
-        top_frame.grid_columnconfigure(0, weight=1)
-        top_frame.grid_rowconfigure(1, weight=1)
-        
-        # Top bar with search and stats
-        top_bar = ttk.Frame(top_frame)
-        top_bar.grid(row=0, column=0, sticky='ew', pady=(0, get_spacing('lg')))
-        top_bar.grid_columnconfigure(0, weight=1)
-        
+        subtitle_label.pack()
+
         # Search section
-        search_frame = ttk.Frame(top_bar)
-        search_frame.grid(row=0, column=0, sticky='w')
-        
-        # Create new search entry for results view
-        self.widgets['results_search_entry'] = SearchEntry(
+        search_frame = tk.Frame(self.root, bg='white')
+        search_frame.grid(row=1, column=0, sticky='ew', padx=20, pady=(0, 20))
+        search_frame.grid_columnconfigure(0, weight=1)
+
+        self.search_entry = tk.Entry(
             search_frame,
-            placeholder="Search for terms...",
-            on_search=self._on_search
+            font=('Arial', 14),
+            width=50,
+            relief='solid',
+            bd=1
         )
-        self.widgets['results_search_entry'].pack(side=tk.LEFT)
-        
-        # Set current search term
-        if self.current_search_term:
-            self.widgets['results_search_entry'].set_search_term(self.current_search_term)
-            
-        # Stats section (top right)
-        stats_frame = ttk.Frame(top_bar)
-        stats_frame.grid(row=0, column=1, sticky='e')
-        
-        # Compact stats display
-        self._create_compact_stats(stats_frame)
-        
-        # Results header
-        results_header = ttk.Frame(top_frame)
-        results_header.grid(row=1, column=0, sticky='ew', pady=(0, get_spacing('md')))
-        results_header.grid_columnconfigure(0, weight=1)
-        
-        # Results title (store reference for real-time updates)
-        results_count = len(self.current_results)
-        if results_count > 0:
-            header_text = f"{ICONS['results']} Found {results_count} matches for \"{self.current_search_term}\""
-            header_color = COLORS['success']
-        else:
-            header_text = f"{ICONS['error']} No matches found for \"{self.current_search_term}\""
-            header_color = COLORS['error']
-            
-        self.widgets['results_title'] = ttk.Label(
-            results_header,
-            text=header_text,
-            font=get_font('heading', 'medium'),
-            foreground=header_color
+        self.search_entry.grid(row=0, column=0, sticky='ew', padx=(0, 10))
+        self.search_entry.bind('<Return>', self._on_search)
+
+        search_btn = tk.Button(
+            search_frame,
+            text='🔍 Search',
+            font=('Arial', 12, 'bold'),
+            bg='#4285f4',  # Google blue color
+            fg='white',
+            relief='flat',
+            padx=20,
+            pady=10,
+            cursor='hand2',
+            command=self._on_search
         )
-        self.widgets['results_title'].grid(row=0, column=0, sticky='w')
-        
-        # Clear button
-        clear_btn = ttk.Button(
-            results_header,
-            text="New Search",
-            command=self._clear_results
+        search_btn.grid(row=0, column=1)
+
+        # Results area with scrolling
+        self.results_canvas = tk.Canvas(self.root, bg='white')
+        scrollbar = tk.Scrollbar(self.root, orient='vertical', command=self.results_canvas.yview)
+        self.results_frame = tk.Frame(self.results_canvas, bg='white')
+
+        self.results_frame.bind(
+            '<Configure>',
+            lambda e: self.results_canvas.configure(scrollregion=self.results_canvas.bbox('all'))
         )
-        clear_btn.grid(row=0, column=1, sticky='e')
-        
-        # Results area
-        self.widgets['results_frame'] = ScrollableFrame(top_frame)
-        self.widgets['results_frame'].grid(row=2, column=0, sticky='nsew')
-        
-        # Populate results
-        self._populate_results()
-        
-        # Update search mode
-        self.search_mode = "top"
-        
-    def _create_compact_stats(self, parent):
-        """Create compact statistics display for results view."""
-        stats_text = f"{ICONS['stats']} {self.indexer.get_file_count()} files | {self.indexer.get_vocabulary_size():,} words"
-        
-        stats_label = ttk.Label(
-            parent,
-            text=stats_text,
-            font=get_font('caption'),
-            foreground=COLORS['text_secondary']
+
+        self.results_canvas.create_window((0, 0), window=self.results_frame, anchor='nw')
+        self.results_canvas.configure(yscrollcommand=scrollbar.set)
+
+        self.results_canvas.grid(row=2, column=0, sticky='nsew', padx=(20, 0))
+        scrollbar.grid(row=2, column=1, sticky='ns', padx=(0, 20))
+
+        # Configure grid weights
+        self.root.grid_rowconfigure(2, weight=1)
+
+        # Initial message
+        self.status_label = tk.Label(
+            self.results_frame,
+            text="Initializing search engine...",
+            font=('Arial', 12),
+            fg='#666666',
+            bg='white'
         )
-        stats_label.pack()
-        
-    def _populate_results(self):
-        """Populate the results area with result cards."""
-        if not self.current_results:
-            # Show no results message
-            no_results_frame = ttk.Frame(self.widgets['results_frame'].scrollable_frame)
-            no_results_frame.grid(row=0, column=0, padx=get_spacing('xl'), pady=get_spacing('xxl'))
-            
-            no_results_label = ttk.Label(
-                no_results_frame,
-                text=f"No files contain the term \"{self.current_search_term}\"\n\nTry a different search term or check your spelling.",
-                font=get_font('body'),
-                foreground=COLORS['text_secondary'],
-                justify=tk.CENTER
-            )
-            no_results_label.pack()
-            
-            return
-            
-        # Calculate grid layout
-        columns = min(LAYOUTS['results_grid']['columns'], len(self.current_results))
-        if len(self.current_results) > 6:
-            columns = LAYOUTS['results_grid']['max_columns']
-            
-        # Create result cards
-        for i, filename in enumerate(self.current_results):
-            row = i // columns
-            col = i % columns
-            
-            # Get word count for this file
-            word_count = len(self.indexer.get_words_in_file(filename) or set())
-            
-            # Create card
-            card = ResultCard(
-                self.widgets['results_frame'].scrollable_frame,
-                filename=filename,
-                word_count=word_count,
-                on_view=self._on_view_file
-            )
-            
-            card.grid(
-                row=row, 
-                column=col, 
-                padx=get_spacing('sm'),
-                pady=get_spacing('sm'),
-                sticky='ew'
-            )
-            
-        # Configure grid weights for equal column widths
-        for col in range(columns):
-            self.widgets['results_frame'].scrollable_frame.grid_columnconfigure(col, weight=1)
-            
+        self.status_label.pack(pady=50)
+
     def _start_initialization(self):
-        """Start the background initialization process."""
-        self.widgets['loading_label'].start_animation()
-        
-        def initialize_indexer():
+        """Initialize search engine in background."""
+        def init_worker():
             try:
+                print("🔄 Initializing search engine...")
                 self.indexer = HtmlIndexer(self.zip_path)
                 self.indexer.build_index()
-                
-                # Update UI on main thread
-                self.root.after(0, self._on_initialization_complete)
-                
+                self.query_processor = QueryProcessor(self.indexer)
+                self.is_initialized = True
+
+                # Update UI
+                self.root.after(0, self._on_init_complete)
             except Exception as e:
-                self.root.after(0, lambda: self._on_initialization_error(str(e)))
-                
-        # Start initialization in background thread
-        init_thread = threading.Thread(target=initialize_indexer, daemon=True)
-        init_thread.start()
-        
-    def _on_initialization_complete(self):
-        """Handle successful initialization."""
-        self.is_initialized = True
-        
-        # Stop loading animation
-        self.widgets['loading_label'].stop_animation("Ready to search!")
-        
-        # Enable search
-        self.widgets['search_entry'].search_btn.config(state='normal')
-        self.widgets['search_entry'].focus()
-        
-        # Update stats safely
-        stats_panel = self.widgets.get('stats_panel')
-        if stats_panel and hasattr(stats_panel, 'update_stats'):
-            try:
-                stats_panel.update_stats(
-                    files_count=self.indexer.get_file_count(),
-                    vocabulary_size=self.indexer.get_vocabulary_size()
-                )
-            except tk.TclError:
-                # Widget was destroyed, ignore the error
-                pass
-        
-    def _on_initialization_error(self, error_message: str):
-        """Handle initialization error."""
-        self.widgets['loading_label'].stop_animation("Initialization failed")
-        
-        messagebox.showerror(
-            "Initialization Error",
-            f"Failed to initialize search engine:\n\n{error_message}\n\nPlease check that Jan.zip exists."
+                self.root.after(0, lambda: self._on_init_error(str(e)))
+
+        thread = threading.Thread(target=init_worker, daemon=True)
+        thread.start()
+
+    def _on_init_complete(self):
+        """Called when initialization completes."""
+        self.status_label.config(
+            text='✅ Ready! Try searching for:\n• "web page"\n• "rhf joke"\n• "legal advice"',
+            justify=tk.CENTER
         )
-        
-    def _on_search(self, search_term: str):
-        """Handle search request."""
+        print("✅ Search engine ready!")
+
+    def _on_init_error(self, error):
+        """Called when initialization fails."""
+        self.status_label.config(
+            text=f"❌ Error: {error}",
+            fg='red'
+        )
+
+    def _on_search(self, event=None):
+        """Handle search requests."""
         if not self.is_initialized:
-            messagebox.showwarning("Not Ready", "Search engine is still initializing. Please wait.")
             return
-            
-        if not search_term.strip():
-            messagebox.showwarning("Empty Search", "Please enter a search term.")
+
+        query = self.search_entry.get().strip()
+        if not query:
             return
-            
+
+        print(f"🔍 Searching for: {query}")
+
+        # Clear previous results
+        for widget in self.results_frame.winfo_children():
+            widget.destroy()
+
         # Perform search
-        self.current_search_term = search_term
-        self.current_results = self.indexer.search_word(search_term) or []
-        
-        # Switch to results layout if in center mode
-        if self.search_mode == "center":
-            self._create_results_layout()
-        else:
-            # Update existing results
-            self._update_results_display()
-            
-        # Update stats after layout is created/updated
-        self._update_stats_if_available(search_term)
-            
-    def _update_results_display(self):
-        """Update the results display with new search results."""
-        # Clear existing results
-        self.widgets['results_frame'].clear_content()
-        
-        # Update header text and color in real-time
-        results_count = len(self.current_results)
-        if results_count > 0:
-            header_text = f"{ICONS['results']} Found {results_count} matches for \"{self.current_search_term}\""
-            header_color = COLORS['success']
-        else:
-            header_text = f"{ICONS['error']} No matches found for \"{self.current_search_term}\""
-            header_color = COLORS['error']
-            
-        # Update the results title widget in real-time
-        if 'results_title' in self.widgets:
-            try:
-                self.widgets['results_title'].config(text=header_text, foreground=header_color)
-            except tk.TclError:
-                # Widget was destroyed, ignore error
-                pass
-        
-        # Repopulate results
-        self._populate_results()
-        
-        # Scroll to top
-        self.widgets['results_frame'].scroll_to_top()
-        
-    def _update_stats_if_available(self, search_term: str):
-        """Update stats panel if it exists and is valid."""
-        stats_panel = self.widgets.get('stats_panel')
-        if stats_panel and hasattr(stats_panel, 'update_stats'):
-            try:
-                stats_panel.update_stats(
-                    last_search=search_term,
-                    current_results=len(self.current_results)
+        try:
+            self.current_results = self.query_processor.process_query(query)
+
+            # Results header
+            header = tk.Label(
+                self.results_frame,
+                text=f'Found {len(self.current_results)} matches for "{query}"',
+                font=('Arial', 16, 'normal'),
+                fg='#202124',
+                bg='white'
+            )
+            header.pack(anchor='w', padx=20, pady=(20, 15))
+
+            # Create Google-style cards
+            for i, result in enumerate(self.current_results):
+                filename = result.doc_id
+                score = result.score
+                word_count = len(self.indexer.get_words_in_file(filename) or set())
+
+                card = GoogleResultCard(
+                    self.results_frame,
+                    filename=filename,
+                    word_count=word_count,
+                    relevance_score=score,
+                    on_view=self._view_file
                 )
-            except tk.TclError:
-                # Widget was destroyed, ignore the error
-                pass
-        
-    def _on_view_file(self, filename: str):
-        """Handle file content view request."""
+
+                # Stack vertically - GOOGLE STYLE
+                card.pack(fill=tk.X, pady=(0, 8))
+
+            print(f"✅ Displayed {len(self.current_results)} Google-style cards")
+
+            # Update scroll region
+            self.results_frame.update_idletasks()
+            self.results_canvas.configure(scrollregion=self.results_canvas.bbox('all'))
+
+        except Exception as e:
+            error_label = tk.Label(
+                self.results_frame,
+                text=f"Search error: {e}",
+                font=('Arial', 12),
+                fg='red',
+                bg='white'
+            )
+            error_label.pack(pady=50)
+
+    def _view_file(self, filename):
+        """Handle file view requests."""
         try:
             # Read file content from zip
             with zipfile.ZipFile(self.zip_path, 'r') as zip_ref:
-                # Remove ./ prefix for zip file access
-                zip_filename = filename.replace('./', '')
+                original_path = self.indexer.get_original_path(filename)
+                if original_path:
+                    zip_filename = original_path.replace('./', '')
+                else:
+                    zip_filename = filename.replace('./', '')
+
                 with zip_ref.open(zip_filename) as file:
                     content = file.read().decode('utf-8', errors='ignore')
-                    
-            # Show content dialog
-            FileContentDialog(
-                self.root,
-                filename=filename,
-                content=content,
-                search_term=self.current_search_term
+
+            # Simple content dialog
+            dialog = tk.Toplevel(self.root)
+            dialog.title(f"Content: {filename}")
+            dialog.geometry("800x600")
+            dialog.configure(bg='white')
+
+            # Header
+            header_frame = tk.Frame(dialog, bg='white')
+            header_frame.pack(fill=tk.X, padx=20, pady=20)
+
+            title_label = tk.Label(
+                header_frame,
+                text=f"📄 {filename}",
+                font=('Arial', 16, 'bold'),
+                bg='white',
+                fg='#202124'
             )
-            
+            title_label.pack(side=tk.LEFT)
+
+            close_btn = tk.Button(
+                header_frame,
+                text="❌ Close",
+                command=dialog.destroy,
+                font=('Arial', 12),
+                bg='#f8f9fa',
+                relief='flat',
+                padx=15,
+                pady=5
+            )
+            close_btn.pack(side=tk.RIGHT)
+
+            # Content
+            text_widget = scrolledtext.ScrolledText(
+                dialog,
+                wrap=tk.WORD,
+                font=('Arial', 11),
+                bg='#f8f9fa',
+                fg='#202124'
+            )
+            text_widget.pack(fill=tk.BOTH, expand=True, padx=20, pady=(0, 20))
+
+            # Insert content and highlight search terms
+            text_widget.insert(tk.END, content)
+
+            # Configure highlighting tag
+            text_widget.tag_configure(
+                'highlight',
+                background='#ffeb3b',  # Yellow highlight
+                foreground='#000000'
+            )
+
+            # Highlight search terms
+            if hasattr(self, 'search_entry') and self.search_entry.get().strip():
+                original_query = self.search_entry.get().strip()
+                content_lower = content.lower()
+
+                # Extract terms to highlight based on query type
+                terms_to_highlight = []
+
+                # Handle quoted phrases like "web page"
+                if original_query.startswith('"') and original_query.endswith('"'):
+                    # For quoted phrases, ONLY highlight the exact phrase
+                    phrase = original_query.strip('"').lower()
+                    terms_to_highlight = [phrase]  # Only the full phrase, not individual words
+                else:
+                    # For regular searches, split on spaces
+                    terms_to_highlight = [term.lower() for term in original_query.split() if term.strip()]
+
+                # Highlight each term
+                for search_term in terms_to_highlight:
+                    if not search_term:
+                        continue
+
+                    start_pos = 0
+                    while True:
+                        pos = content_lower.find(search_term, start_pos)
+                        if pos == -1:
+                            break
+
+                        # Convert position to line.char format for tkinter
+                        lines_before = content[:pos].count('\n')
+                        char_in_line = pos - content[:pos].rfind('\n') - 1
+                        if char_in_line < 0:  # First line
+                            char_in_line = pos
+
+                        start_index = f"{lines_before + 1}.{char_in_line}"
+                        end_index = f"{lines_before + 1}.{char_in_line + len(search_term)}"
+
+                        text_widget.tag_add('highlight', start_index, end_index)
+                        start_pos = pos + 1
+
+            text_widget.config(state=tk.DISABLED)
+
         except Exception as e:
-            messagebox.showerror(
-                "Error",
-                f"Could not load file content:\n\n{str(e)}"
-            )
-            
-    def _clear_results(self):
-        """Clear results and return to center search mode."""
-        self.current_search_term = ""
-        self.current_results = []
-        self.search_mode = "center"
-        
-        # Recreate center layout
-        self.main_frame.destroy()
-        self.main_frame = ttk.Frame(self.root)
-        self.main_frame.grid(row=0, column=0, sticky='nsew', padx=get_spacing('lg'), pady=get_spacing('lg'))
-        self.main_frame.grid_columnconfigure(0, weight=1)
-        self.main_frame.grid_rowconfigure(0, weight=1)
-        
-        self._create_center_layout()
-        
-        # Update initialization status
-        if self.is_initialized:
-            self._on_initialization_complete()
-            
+            messagebox.showerror("Error", f"Could not load file content:\n\n{str(e)}")
+
     def run(self):
         """Run the GUI application."""
-        try:
-            self.root.mainloop()
-        except KeyboardInterrupt:
-            self.root.quit()
-            
-    def quit(self):
-        """Quit the application."""
-        self.root.quit()
-        self.root.destroy()
+        print("🚀 GOOGLE-STYLE GUI STARTING")
+        print("=" * 50)
+        print("✅ Clean implementation with Google-style cards")
+        print("✅ Blue clickable titles")
+        print("✅ Green document URLs")
+        print("✅ Gray description text")
+        print("✅ Vertical stacking layout")
+        print("✅ Star badges for high scores")
+        print()
+        self.root.mainloop()
 
 
 def main():

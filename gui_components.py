@@ -141,112 +141,139 @@ class SearchEntry(ttk.Frame):
         self.entry.focus_set()
 
 
-class ResultCard(ttk.Frame):
+class ResultCard(tk.Frame):
     """
-    Card widget for displaying search result information.
+    Google-style result card for displaying search result information.
+
+    Features:
+    - Blue clickable titles like Google search results
+    - Green document URLs
+    - Gray description snippets
+    - Horizontal layout with proper spacing
+    - Star badges for high relevance scores
     """
-    
-    def __init__(self, parent, filename: str, word_count: int, 
+
+    def __init__(self, parent, filename: str, word_count: int,
+                 relevance_score: float = 0.0,
                  on_view: Optional[Callable[[str], None]] = None, **kwargs):
-        super().__init__(parent, style='Card.TFrame', **kwargs)
-        
+        super().__init__(parent, bg='white', relief='flat', **kwargs)
+
         self.filename = filename
         self.word_count = word_count
+        self.relevance_score = relevance_score
         self.on_view = on_view
-        
-        self._create_widgets()
-        self._setup_hover_effects()
-        
-    def _create_widgets(self):
-        """Create the card content widgets."""
-        # Configure grid
+
+        self._create_google_style_layout()
+
+    def _create_google_style_layout(self):
+        """Create Google-style horizontal card layout."""
         self.grid_columnconfigure(0, weight=1)
-        self.grid_rowconfigure(0, weight=1)
-        
-        # Main content frame
-        content_frame = ttk.Frame(self)
-        content_frame.grid(row=0, column=0, sticky='nsew', padx=get_spacing('md'), pady=get_spacing('md'))
+
+        # Main content frame with proper Google-style padding
+        content_frame = tk.Frame(self, bg='white')
+        content_frame.grid(row=0, column=0, sticky='nsew', padx=24, pady=12)
         content_frame.grid_columnconfigure(0, weight=1)
-        
-        # File icon and name
-        header_frame = ttk.Frame(content_frame)
-        header_frame.grid(row=0, column=0, sticky='ew', pady=(0, get_spacing('sm')))
-        header_frame.grid_columnconfigure(1, weight=1)
-        
-        # File icon
-        icon_label = ttk.Label(
-            header_frame,
-            text=ICONS['file'],
-            font=get_font('heading'),
-            style='Body.TLabel'
-        )
-        icon_label.grid(row=0, column=0, padx=(0, get_spacing('sm')))
-        
-        # Filename (shortened if too long)
-        display_name = self._format_filename(self.filename)
-        name_label = ttk.Label(
-            header_frame,
-            text=display_name,
-            font=get_font('subheading', 'medium'),
-            style='Body.TLabel'
-        )
-        name_label.grid(row=0, column=1, sticky='w')
-        
-        # Word count
-        count_label = ttk.Label(
+
+        # Document title - Google-style blue clickable link
+        title_text = self._format_filename(self.filename)
+        self.title_label = tk.Label(
             content_frame,
-            text=f"{self.word_count} words",
-            font=get_font('caption'),
-            foreground=COLORS['text_secondary'],
-            style='Body.TLabel'
-        )
-        count_label.grid(row=1, column=0, sticky='w', pady=(0, get_spacing('md')))
-        
-        # View button - using tk.Button with white background
-        self.view_btn = tk.Button(
-            content_frame,
-            text="View Content",
-            command=self._on_view_clicked,
+            text=title_text,
+            font=('Arial', 18, 'normal'),
+            fg='#1a0dab',  # Google search result blue
             bg='white',
-            fg='black',
-            font=get_font('button', 'medium'),
-            relief='solid',
-            bd=1,
-            padx=12,
-            pady=8,
             cursor='hand2',
-            activebackground=COLORS['card_hover'],
-            activeforeground='black'
+            anchor='w'
         )
-        self.view_btn.grid(row=2, column=0, sticky='ew')
+        self.title_label.grid(row=0, column=0, sticky='ew', pady=(0, 2))
+        self.title_label.bind('<Button-1>', lambda e: self._on_view_clicked())
+
+        # Title hover effects - Google style underline
+        def title_enter(e):
+            self.title_label.config(font=('Arial', 18, 'underline'))
+        def title_leave(e):
+            self.title_label.config(font=('Arial', 18, 'normal'))
+
+        self.title_label.bind('<Enter>', title_enter)
+        self.title_label.bind('<Leave>', title_leave)
+
+        # Document URL line - Google-style green
+        url_label = tk.Label(
+            content_frame,
+            text=f"📄 Document ID: {self.filename}",
+            font=('Arial', 12, 'normal'),
+            fg='#006621',  # Google URL green
+            bg='white',
+            anchor='w'
+        )
+        url_label.grid(row=1, column=0, sticky='ew', pady=(0, 4))
+
+        # Description snippet - Google-style gray
+        snippet_parts = [f"Document contains {self.word_count} words"]
+        if self.relevance_score > 0:
+            score_text = f"Relevance score: {self.relevance_score:.3f}" if self.relevance_score < 1.0 else f"Relevance score: {self.relevance_score:.2f}"
+            snippet_parts.append(score_text)
+        snippet_text = " • ".join(snippet_parts)
+
+        snippet_label = tk.Label(
+            content_frame,
+            text=snippet_text,
+            font=('Arial', 13, 'normal'),
+            fg='#545454',  # Google description gray
+            bg='white',
+            anchor='w',
+            wraplength=600
+        )
+        snippet_label.grid(row=2, column=0, sticky='ew', pady=(0, 8))
+
+        # Action buttons - Google-style inline actions
+        actions_frame = tk.Frame(content_frame, bg='white')
+        actions_frame.grid(row=3, column=0, sticky='w')
+
+        # View Content button - Google-style subtle design
+        self.view_btn = tk.Button(
+            actions_frame,
+            text="📖 View Content",
+            command=self._on_view_clicked,
+            bg='#f8f9fa',  # Google button background
+            fg='#3c4043',  # Google button text
+            font=('Arial', 11, 'normal'),
+            relief='flat',
+            bd=0,
+            padx=10,
+            pady=5,
+            cursor='hand2'
+        )
+        self.view_btn.pack(side=tk.LEFT)
+
+        # Star badge for high scores - Google-style accent
+        if self.relevance_score > 0.5:
+            score_badge = tk.Label(
+                actions_frame,
+                text=f"⭐ {self.relevance_score:.2f}",
+                font=('Arial', 11, 'normal'),
+                fg='#ea4335',  # Google red accent
+                bg='white'
+            )
+            score_badge.pack(side=tk.LEFT, padx=(10, 0))
         
     def _format_filename(self, filename: str) -> str:
         """Format filename for display, truncating if necessary."""
-        # Remove path prefix
-        display_name = filename.replace('./Jan/', '')
-        
-        # Truncate if too long
+        # The filename is now in format: filename1234 (already clean)
+        display_name = filename
+
+        # Truncate if too long (though random IDs should be short)
         max_length = 25
         if len(display_name) > max_length:
             display_name = display_name[:max_length-3] + '...'
-            
+
         return display_name
         
     def _setup_hover_effects(self):
-        """Setup hover effects for the card."""
-        def on_enter(event):
-            self.config(style='CardHover.TFrame')
-            
-        def on_leave(event):
-            self.config(style='Card.TFrame')
-            
-        self.bind('<Enter>', on_enter)
-        self.bind('<Leave>', on_leave)
-        
-        # Bind to all child widgets as well
-        for widget in self.winfo_children():
-            widget.bind('<Enter>', on_enter)
-            widget.bind('<Leave>', on_leave)
+        """Hover effects are handled by individual components in the Google-style layout."""
+        # Title hover effects are already set up in _create_google_style_layout
+        # No additional hover effects needed for the card frame
+        pass
             
     def _on_view_clicked(self):
         """Handle view button click."""
@@ -372,74 +399,83 @@ class FileContentDialog:
     """
     Dialog for displaying HTML file content with search term highlighting.
     """
-    
-    def __init__(self, parent, filename: str, content: str, search_term: str = ''):
+
+    def __init__(self, parent, filename: str, content: str, search_term: str = '', highlight_terms: List[str] = None):
         self.parent = parent
         self.filename = filename
         self.content = content
         self.search_term = search_term.lower()
-        
+        self.highlight_terms = highlight_terms or [search_term.lower()] if search_term else []
+
         self._create_dialog()
-        
+
     def _create_dialog(self):
         """Create the content dialog window."""
         # Create dialog window
         self.dialog = tk.Toplevel(self.parent)
         self.dialog.title(f"Content: {self.filename}")
-        self.dialog.geometry("700x500")
-        self.dialog.configure(bg=COLORS['background'])
-        
+        self.dialog.geometry("800x600")
+        self.dialog.configure(bg='white')
+
         # Make it modal
         self.dialog.transient(self.parent)
         self.dialog.grab_set()
-        
+
         # Configure grid
         self.dialog.grid_columnconfigure(0, weight=1)
         self.dialog.grid_rowconfigure(1, weight=1)
-        
+
         # Header frame
-        header_frame = ttk.Frame(self.dialog)
-        header_frame.grid(row=0, column=0, sticky='ew', padx=get_spacing('md'), pady=get_spacing('md'))
+        header_frame = tk.Frame(self.dialog, bg='white')
+        header_frame.grid(row=0, column=0, sticky='ew', padx=20, pady=20)
         header_frame.grid_columnconfigure(0, weight=1)
-        
+
         # Title
-        title_label = ttk.Label(
+        title_label = tk.Label(
             header_frame,
-            text=f"{ICONS['document']} {self.filename}",
-            font=get_font('heading', 'medium'),
-            style='Heading.TLabel'
+            text=f"📄 {self.filename}",
+            font=('Arial', 16, 'bold'),
+            bg='white',
+            fg='#202124'
         )
         title_label.grid(row=0, column=0, sticky='w')
-        
+
         # Close button
-        close_btn = ttk.Button(
+        close_btn = tk.Button(
             header_frame,
-            text=f"{ICONS['close']} Close",
-            command=self.dialog.destroy
+            text="❌ Close",
+            command=self.dialog.destroy,
+            font=('Arial', 12),
+            bg='#f8f9fa',
+            relief='flat',
+            padx=15,
+            pady=5
         )
         close_btn.grid(row=0, column=1, sticky='e')
-        
+
         # Content area
-        content_frame = ttk.Frame(self.dialog)
-        content_frame.grid(row=1, column=0, sticky='nsew', padx=get_spacing('md'), pady=(0, get_spacing('md')))
+        content_frame = tk.Frame(self.dialog, bg='white')
+        content_frame.grid(row=1, column=0, sticky='nsew', padx=20, pady=(0, 20))
         content_frame.grid_columnconfigure(0, weight=1)
         content_frame.grid_rowconfigure(0, weight=1)
-        
+
         # Text widget with scrollbar
         self.text_widget = scrolledtext.ScrolledText(
             content_frame,
             wrap=tk.WORD,
-            font=get_font('body'),
-            bg=COLORS['surface'],
-            fg=COLORS['text_primary'],
-            selectbackground=COLORS['primary_light'],
-            selectforeground=COLORS['text_primary']
+            font=('Arial', 11),
+            bg='#f8f9fa',
+            fg='#202124',
+            selectbackground='#4285f4',
+            selectforeground='white',
+            relief='solid',
+            bd=1
         )
         self.text_widget.grid(row=0, column=0, sticky='nsew')
-        
+
         # Insert content
         self._insert_content()
-        
+
         # Center the dialog
         self.dialog.update_idletasks()
         self._center_dialog()
@@ -447,39 +483,84 @@ class FileContentDialog:
     def _insert_content(self):
         """Insert and highlight content in the text widget."""
         self.text_widget.insert(tk.END, self.content)
-        
+
         # Configure highlighting tag
         self.text_widget.tag_configure(
             'highlight',
-            background=COLORS['warning'],
-            foreground='white'
+            background='#ffeb3b',
+            foreground='#000000'
         )
         
         # Highlight search terms if provided
-        if self.search_term:
-            self._highlight_search_term()
+        if self.highlight_terms:
+            self._highlight_search_terms()
             
         # Make text widget read-only
         self.text_widget.config(state=tk.DISABLED)
         
-    def _highlight_search_term(self):
-        """Highlight all instances of the search term."""
+    def _highlight_search_terms(self):
+        """Highlight all instances of the search terms."""
+        import re
+
+        content_lower = self.content.lower()
+
+        # Clean and prepare highlight terms
+        terms_to_highlight = []
+        for term in self.highlight_terms:
+            if term and term.strip():
+                clean_term = term.strip().lower()
+                # Remove quotes and special characters from phrase searches
+                clean_term = clean_term.strip('"\'')
+                if clean_term:
+                    terms_to_highlight.append(clean_term)
+
+        if not terms_to_highlight:
+            return
+
+        # Create regex pattern for word boundaries to avoid partial matches
+        # Escape special regex characters in search terms
+        escaped_terms = [re.escape(term) for term in terms_to_highlight]
+        pattern = r'\b(?:' + '|'.join(escaped_terms) + r')\b'
+
+        try:
+            # Find all matches
+            for match in re.finditer(pattern, content_lower, re.IGNORECASE):
+                start_pos = match.start()
+                end_pos = match.end()
+
+                # Convert to Tkinter text indices
+                line_start = self.content.count('\n', 0, start_pos) + 1
+                col_start = start_pos - self.content.rfind('\n', 0, start_pos) - 1
+                col_end = col_start + (end_pos - start_pos)
+
+                start_index = f"{line_start}.{col_start}"
+                end_index = f"{line_start}.{col_end}"
+
+                self.text_widget.tag_add('highlight', start_index, end_index)
+
+        except re.error:
+            # Fallback to simple string search if regex fails
+            for term in terms_to_highlight:
+                self._highlight_single_term(term)
+
+    def _highlight_single_term(self, term: str):
+        """Fallback method to highlight a single term using simple string search."""
         content_lower = self.content.lower()
         start_pos = 0
-        
+
         while True:
-            pos = content_lower.find(self.search_term, start_pos)
+            pos = content_lower.find(term.lower(), start_pos)
             if pos == -1:
                 break
-                
+
             # Convert to Tkinter text indices
             line_start = self.content.count('\n', 0, pos) + 1
             col_start = pos - self.content.rfind('\n', 0, pos) - 1
-            col_end = col_start + len(self.search_term)
-            
+            col_end = col_start + len(term)
+
             start_index = f"{line_start}.{col_start}"
             end_index = f"{line_start}.{col_end}"
-            
+
             self.text_widget.tag_add('highlight', start_index, end_index)
             start_pos = pos + 1
             
