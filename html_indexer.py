@@ -74,6 +74,9 @@ class HtmlIndexer:
         self.url_list: List[str] = []  # List of extracted URLs
         self.url_status: Dict[str, str] = {}  # URL -> status (for future crawler)
 
+        # Anchor text support (Part 3)
+        self.anchor_texts: Dict[str, List[str]] = defaultdict(list)  # doc_id -> anchor texts pointing to it
+
         # Document statistics for TF-IDF calculation
         self.total_documents: int = 0
         self.avg_doc_length: float = 0.0
@@ -250,6 +253,69 @@ class HtmlIndexer:
 
         return words, dict(word_positions)
 
+    def extract_words_with_positions_and_anchors(self, html_content: str, anchor_texts: List[str] = None) -> Tuple[List[str], Dict[str, List[int]]]:
+        """
+        Extract words with positions from HTML content, including anchor texts.
+
+        Args:
+            html_content: Raw HTML content as string
+            anchor_texts: Optional list of anchor texts pointing to this document
+
+        Returns:
+            Tuple of (word_list, position_dict) where anchor texts are included
+        """
+        soup = BeautifulSoup(html_content, 'lxml')
+
+        # Extract all text content, removing HTML tags
+        text = soup.get_text(separator=' ')
+
+        # Add anchor texts to the content (they get extra weight)
+        if anchor_texts:
+            # Add anchor texts 2 times for extra weight
+            anchor_text_combined = ' '.join(anchor_texts)
+            text = text + ' ' + anchor_text_combined + ' ' + anchor_text_combined
+
+        # Split text into words and track positions
+        words = []
+        word_positions = defaultdict(list)
+        position = 0
+
+        for word in text.split():
+            # Remove leading/trailing punctuation and convert to lowercase
+            cleaned_word = word.strip('.,!?;:"()[]{}').lower()
+
+            # Only include words that contain only alphabetic characters
+            if cleaned_word and self.alphabetic_pattern.match(cleaned_word):
+                # Skip stop words
+                if cleaned_word not in self.stop_words:
+                    words.append(cleaned_word)
+                    word_positions[cleaned_word].append(position)
+                    position += 1
+
+        return words, dict(word_positions)
+
+    def extract_anchor_texts_from_html(self, html_content: str) -> List[Tuple[str, str]]:
+        """
+        Extract anchor texts and their target URLs from HTML content.
+
+        Args:
+            html_content: Raw HTML content as string
+
+        Returns:
+            List of (url, anchor_text) tuples
+        """
+        soup = BeautifulSoup(html_content, 'lxml')
+        anchor_data = []
+
+        for tag in soup.find_all('a', href=True):
+            href = tag.get('href', '')
+            anchor_text = tag.get_text(strip=True)
+
+            if href and anchor_text:
+                anchor_data.append((href, anchor_text))
+
+        return anchor_data
+
     def extract_words_from_html(self, html_content: str) -> Set[str]:
         """
         Extract alphabetic words from HTML content (legacy method).
@@ -386,7 +452,117 @@ class HtmlIndexer:
             self.word_files[word] = [p.doc_id for p in postings]
 
         self.is_indexed = True
-        
+
+    def build_index_from_crawled_documents(self, documents: Dict[str, str], anchor_texts_map: Dict[str, List[str]] = None) -> None:
+        """
+        Build index from crawled documents (Part 3 - Spider integration).
+
+        Args:
+            documents: Dictionary mapping URLs to HTML content
+            anchor_texts_map: Dictionary mapping URLs to their anchor texts
+        """
+        print("Building index from crawled documents...")
+        print(f"Processing {len(documents)} documents")
+
+        if anchor_texts_map is None:
+            anchor_texts_map = {}
+
+        # First pass: collect document information
+        document_word_counts = {}
+        document_words_with_positions = {}
+        all_document_urls = {}
+
+        for url, html_content in documents.items():
+            # Generate unique document ID
+            doc_id = self._generate_document_id(url)
+
+            # Get anchor texts for this document
+            anchors = anchor_texts_map.get(url, [])
+
+            # Extract words with positions, including anchor texts
+            words, word_positions = self.extract_words_with_positions_and_anchors(html_content, anchors)
+            document_words_with_positions[doc_id] = (words, word_positions)
+
+            # Store anchor texts
+            if anchors:
+                self.anchor_texts[doc_id] = anchors
+
+            # Extract URLs from the document
+            urls = self.extract_urls_from_html(html_content)
+            all_document_urls[doc_id] = urls
+            self.url_list.extend(urls)
+
+            # Count word frequencies
+            word_counts = Counter(words)
+            document_word_counts[doc_id] = word_counts
+
+            # Create document record
+            self.document_list[doc_id] = DocumentRecord(
+                doc_id=doc_id,
+                url=url,
+                length=len(words),
+                unique_words=len(set(words))
+            )
+
+            # Legacy compatibility
+            self.file_words[doc_id] = set(words)
+
+        self.total_documents = len(self.document_list)
+        if self.total_documents > 0:
+            self.avg_doc_length = sum(doc.length for doc in self.document_list.values()) / self.total_documents
+
+        # Remove duplicate URLs and initialize status
+        self.url_list = list(set(self.url_list))
+        for url in self.url_list:
+            self.url_status[url] = "unvisited"
+
+        # Second pass: build inverted index with TF-IDF
+        word_doc_frequencies = defaultdict(int)
+
+        # Calculate document frequencies
+        for doc_id, word_counts in document_word_counts.items():
+            for word in word_counts.keys():
+                word_doc_frequencies[word] += 1
+
+        # Build inverted index
+        for word, doc_freq in word_doc_frequencies.items():
+            postings = []
+
+            for doc_id, word_counts in document_word_counts.items():
+                if word in word_counts:
+                    term_freq = word_counts[word]
+                    doc_length = self.document_list[doc_id].length
+                    tf_idf = self.calculate_tf_idf(term_freq, doc_length, doc_freq)
+                    positions = document_words_with_positions[doc_id][1][word]
+
+                    posting = PostingRecord(
+                        doc_id=doc_id,
+                        term_frequency=term_freq,
+                        tf_idf=tf_idf,
+                        positions=positions
+                    )
+                    postings.append(posting)
+
+            # Sort postings by TF-IDF score (descending)
+            postings.sort(key=lambda p: p.tf_idf, reverse=True)
+
+            self.inverted_index[word] = InvertedIndexEntry(
+                word=word,
+                document_frequency=doc_freq,
+                postings=postings
+            )
+
+            # Legacy compatibility
+            self.word_files[word] = [p.doc_id for p in postings]
+
+        self.is_indexed = True
+
+        print(f"Successfully indexed {len(self.file_words)} documents")
+        print(f"Built inverted index with {len(self.inverted_index)} unique words")
+        print(f"Extracted {len(self.url_list)} unique URLs")
+        print(f"Documents with anchor texts: {len(self.anchor_texts)}")
+        print(f"Average document length: {self.avg_doc_length:.2f} words")
+
     def build_index(self) -> None:
         """
         Build the complete index from the zip file.
