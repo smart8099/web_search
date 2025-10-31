@@ -48,9 +48,9 @@ def initialize_search_engine(corpus_choice: str, use_spider: bool = False):
 
                 st.success(f"✓ Crawled {len(documents)} documents")
 
-                # Build index from crawled documents
+                # Build index from crawled documents (no zip needed - spider extracted content)
                 st.info("🔨 Building inverted index...")
-                indexer = HtmlIndexer(corpus_choice)
+                indexer = HtmlIndexer()
                 indexer.build_index_from_crawled_documents(documents, anchor_texts)
 
                 st.session_state.spider_stats = spider.get_statistics()

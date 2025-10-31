@@ -63,8 +63,8 @@ class Part3Application:
         documents = self.spider.get_crawled_documents()
         anchor_texts = self.spider.get_all_anchor_texts()
 
-        # Create indexer and build index
-        self.indexer = HtmlIndexer(self.zip_path)
+        # Create indexer and build index (no zip needed - spider already extracted content)
+        self.indexer = HtmlIndexer()
         self.indexer.build_index_from_crawled_documents(documents, anchor_texts)
 
         # Create query processor
