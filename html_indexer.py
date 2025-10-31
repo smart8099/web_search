@@ -3,6 +3,8 @@ HTML Indexer for Information Retrieval and Web Search Engine Project
 
 This module provides the core functionality for extracting index terms from HTML files
 contained in a zip archive and building efficient data structures for fast search operations.
+
+Optimized with parallel word extraction using ProcessPoolExecutor.
 """
 
 import re
@@ -13,6 +15,126 @@ from typing import Dict, List, Set, Optional, NamedTuple, Tuple
 from pathlib import Path
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin, urlparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
+from multiprocessing import cpu_count
+
+
+# Worker functions for parallel processing (must be at module level for pickling)
+
+def _get_stop_words() -> Set[str]:
+    """Get default stop words for worker processes."""
+    return {
+        'a', 'an', 'and', 'are', 'as', 'at', 'be', 'by', 'for', 'from',
+        'has', 'he', 'in', 'is', 'it', 'its', 'of', 'on', 'that', 'the',
+        'to', 'was', 'will', 'with', 'you', 'your', 'this', 'but', 'or',
+        'not', 'have', 'had', 'what', 'when', 'where', 'who', 'which',
+        'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most',
+        'other', 'some', 'such', 'no', 'nor', 'only', 'own', 'same', 'so',
+        'than', 'too', 'very', 'can', 'may', 'should', 'would', 'could'
+    }
+
+
+def _extract_words_worker(args: Tuple[str, str, List[str]]) -> Tuple[str, List[str], Dict[str, List[int]]]:
+    """
+    Worker function to extract words with positions from HTML content.
+
+    Args:
+        args: Tuple of (url, html_content, anchor_texts)
+
+    Returns:
+        Tuple of (url, words_list, word_positions_dict)
+    """
+    url, html_content, anchor_texts = args
+
+    try:
+        from bs4 import BeautifulSoup
+        import re
+        from collections import defaultdict
+
+        stop_words = _get_stop_words()
+        alphabetic_pattern = re.compile(r'^[a-zA-Z]+$')
+
+        soup = BeautifulSoup(html_content, 'lxml')
+        text = soup.get_text(separator=' ')
+
+        # Add anchor texts with extra weight
+        if anchor_texts:
+            anchor_text_combined = ' '.join(anchor_texts)
+            text = text + ' ' + anchor_text_combined + ' ' + anchor_text_combined
+
+        # Extract words with positions
+        words = []
+        word_positions = defaultdict(list)
+        position = 0
+
+        for word in text.split():
+            cleaned_word = word.strip('.,!?;:"()[]{}').lower()
+
+            if cleaned_word and alphabetic_pattern.match(cleaned_word):
+                if cleaned_word not in stop_words:
+                    words.append(cleaned_word)
+                    word_positions[cleaned_word].append(position)
+                    position += 1
+
+        return (url, words, dict(word_positions))
+
+    except Exception as e:
+        return (url, [], {})
+
+
+def _calculate_tfidf_for_word(args):
+    """
+    Worker function to calculate TF-IDF for a single word across all documents.
+
+    Args:
+        args: Tuple of (word, doc_freq, document_word_counts, document_lengths,
+                       document_positions, total_documents)
+
+    Returns:
+        Tuple of (word, dict with 'word', 'document_frequency', 'postings')
+        where postings is a list of dicts with 'doc_id', 'term_frequency', 'tf_idf', 'positions'
+    """
+    import math
+
+    word, doc_freq, document_word_counts, document_lengths, document_positions, total_documents = args
+
+    postings = []
+
+    for doc_id, word_counts in document_word_counts.items():
+        if word in word_counts:
+            term_freq = word_counts[word]
+            doc_length = document_lengths[doc_id]
+
+            # Calculate TF-IDF
+            if term_freq == 0 or doc_freq == 0:
+                tf_idf = 0.0
+            else:
+                tf = term_freq / doc_length
+                idf = math.log(total_documents / doc_freq) if doc_freq > 0 else 0.0
+                tf_idf = tf * idf
+
+            positions = document_positions[doc_id].get(word, [])
+
+            # Return plain dict instead of namedtuple
+            posting = {
+                'doc_id': doc_id,
+                'term_frequency': term_freq,
+                'tf_idf': tf_idf,
+                'positions': positions
+            }
+            postings.append(posting)
+
+    # Sort postings by TF-IDF score (descending)
+    postings.sort(key=lambda p: p['tf_idf'], reverse=True)
+
+    # Return plain dict instead of namedtuple
+    entry_dict = {
+        'word': word,
+        'document_frequency': doc_freq,
+        'postings': postings
+    }
+
+    return (word, entry_dict)
 
 
 class DocumentRecord(NamedTuple):
@@ -453,13 +575,14 @@ class HtmlIndexer:
 
         self.is_indexed = True
 
-    def build_index_from_crawled_documents(self, documents: Dict[str, str], anchor_texts_map: Dict[str, List[str]] = None) -> None:
+    def build_index_from_crawled_documents(self, documents: Dict[str, str], anchor_texts_map: Dict[str, List[str]] = None, max_workers: Optional[int] = None) -> None:
         """
         Build index from crawled documents (Part 3 - Spider integration).
 
         Args:
             documents: Dictionary mapping URLs to HTML content
             anchor_texts_map: Dictionary mapping URLs to their anchor texts
+            max_workers: Number of worker processes (None = cpu_count(), 1 = sequential)
         """
         print("Building index from crawled documents...")
         print(f"Processing {len(documents)} documents")
@@ -467,45 +590,103 @@ class HtmlIndexer:
         if anchor_texts_map is None:
             anchor_texts_map = {}
 
+        # Default to parallel processing
+        if max_workers is None:
+            max_workers = cpu_count()
+
         # First pass: collect document information
         document_word_counts = {}
         document_words_with_positions = {}
         all_document_urls = {}
 
-        for url, html_content in documents.items():
-            # Generate unique document ID
-            doc_id = self._generate_document_id(url)
+        # Parallel word extraction
+        if max_workers > 1:
+            print(f"Using {max_workers} worker processes for word extraction")
 
-            # Get anchor texts for this document
-            anchors = anchor_texts_map.get(url, [])
+            # Prepare tasks for parallel processing
+            tasks = [
+                (url, html_content, anchor_texts_map.get(url, []))
+                for url, html_content in documents.items()
+            ]
 
-            # Extract words with positions, including anchor texts
-            words, word_positions = self.extract_words_with_positions_and_anchors(html_content, anchors)
-            document_words_with_positions[doc_id] = (words, word_positions)
+            # Process in parallel
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                futures = {executor.submit(_extract_words_worker, task): task[0] for task in tasks}
 
-            # Store anchor texts
-            if anchors:
-                self.anchor_texts[doc_id] = anchors
+                for future in as_completed(futures):
+                    url = futures[future]
+                    try:
+                        result_url, words, word_positions = future.result()
 
-            # Extract URLs from the document
-            urls = self.extract_urls_from_html(html_content)
-            all_document_urls[doc_id] = urls
-            self.url_list.extend(urls)
+                        # Generate unique document ID
+                        doc_id = self._generate_document_id(result_url)
 
-            # Count word frequencies
-            word_counts = Counter(words)
-            document_word_counts[doc_id] = word_counts
+                        document_words_with_positions[doc_id] = (words, word_positions)
 
-            # Create document record
-            self.document_list[doc_id] = DocumentRecord(
-                doc_id=doc_id,
-                url=url,
-                length=len(words),
-                unique_words=len(set(words))
-            )
+                        # Store anchor texts
+                        anchors = anchor_texts_map.get(result_url, [])
+                        if anchors:
+                            self.anchor_texts[doc_id] = anchors
 
-            # Legacy compatibility
-            self.file_words[doc_id] = set(words)
+                        # Extract URLs from the document (quick, can stay sequential)
+                        urls = self.extract_urls_from_html(documents[result_url])
+                        all_document_urls[doc_id] = urls
+                        self.url_list.extend(urls)
+
+                        # Count word frequencies
+                        word_counts = Counter(words)
+                        document_word_counts[doc_id] = word_counts
+
+                        # Create document record
+                        self.document_list[doc_id] = DocumentRecord(
+                            doc_id=doc_id,
+                            url=result_url,
+                            length=len(words),
+                            unique_words=len(set(words))
+                        )
+
+                        # Legacy compatibility
+                        self.file_words[doc_id] = set(words)
+
+                    except Exception as e:
+                        print(f"Error processing {url}: {e}")
+
+        else:
+            # Sequential processing (original code)
+            for url, html_content in documents.items():
+                # Generate unique document ID
+                doc_id = self._generate_document_id(url)
+
+                # Get anchor texts for this document
+                anchors = anchor_texts_map.get(url, [])
+
+                # Extract words with positions, including anchor texts
+                words, word_positions = self.extract_words_with_positions_and_anchors(html_content, anchors)
+                document_words_with_positions[doc_id] = (words, word_positions)
+
+                # Store anchor texts
+                if anchors:
+                    self.anchor_texts[doc_id] = anchors
+
+                # Extract URLs from the document
+                urls = self.extract_urls_from_html(html_content)
+                all_document_urls[doc_id] = urls
+                self.url_list.extend(urls)
+
+                # Count word frequencies
+                word_counts = Counter(words)
+                document_word_counts[doc_id] = word_counts
+
+                # Create document record
+                self.document_list[doc_id] = DocumentRecord(
+                    doc_id=doc_id,
+                    url=url,
+                    length=len(words),
+                    unique_words=len(set(words))
+                )
+
+                # Legacy compatibility
+                self.file_words[doc_id] = set(words)
 
         self.total_documents = len(self.document_list)
         if self.total_documents > 0:
@@ -524,7 +705,7 @@ class HtmlIndexer:
             for word in word_counts.keys():
                 word_doc_frequencies[word] += 1
 
-        # Build inverted index
+        # Build inverted index (sequential TF-IDF - parallel version too slow due to pickling overhead)
         for word, doc_freq in word_doc_frequencies.items():
             postings = []
 
