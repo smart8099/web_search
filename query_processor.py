@@ -12,6 +12,7 @@ Course: CSCI 6373 IR and Web Search Engine
 
 import re
 import math
+import heapq
 from typing import Dict, List, Set, Optional, Tuple, NamedTuple
 from collections import defaultdict, Counter
 from html_indexer import HtmlIndexer, PostingRecord
@@ -42,6 +43,9 @@ class QueryProcessor:
             indexer: HtmlIndexer instance with built index
         """
         self.indexer = indexer
+
+        # Track total results count (before heapq limiting)
+        self.last_total_count = 0
 
         # Query parsing patterns
         self.phrase_pattern = re.compile(r'"([^"]+)"')
@@ -126,7 +130,14 @@ class QueryProcessor:
         for doc_id in all_docs:
             results.append(QueryResult(doc_id=doc_id, score=doc_scores[doc_id]))
 
-        return sorted(results, key=lambda x: x.score, reverse=True)
+        # Store total count before limiting
+        self.last_total_count = len(results)
+
+        # Use heapq for large result sets (more efficient than full sort)
+        if len(results) > 100:
+            return heapq.nlargest(100, results, key=lambda x: x.score)
+        else:
+            return sorted(results, key=lambda x: x.score, reverse=True)
 
     def boolean_and_search(self, terms: List[str]) -> List[QueryResult]:
         """
@@ -167,7 +178,14 @@ class QueryProcessor:
             score = sum(term_scores[doc_id].get(term, 0) for term in terms)
             results.append(QueryResult(doc_id=doc_id, score=score))
 
-        return sorted(results, key=lambda x: x.score, reverse=True)
+        # Store total count before limiting
+        self.last_total_count = len(results)
+
+        # Use heapq for large result sets (more efficient than full sort)
+        if len(results) > 100:
+            return heapq.nlargest(100, results, key=lambda x: x.score)
+        else:
+            return sorted(results, key=lambda x: x.score, reverse=True)
 
     def boolean_not_search(self, include_term: str, exclude_term: str) -> List[QueryResult]:
         """
@@ -196,7 +214,14 @@ class QueryProcessor:
             if posting.doc_id in result_docs:
                 results.append(QueryResult(doc_id=posting.doc_id, score=posting.tf_idf))
 
-        return sorted(results, key=lambda x: x.score, reverse=True)
+        # Store total count before limiting
+        self.last_total_count = len(results)
+
+        # Use heapq for large result sets (more efficient than full sort)
+        if len(results) > 100:
+            return heapq.nlargest(100, results, key=lambda x: x.score)
+        else:
+            return sorted(results, key=lambda x: x.score, reverse=True)
 
     def vector_space_search(self, terms: List[str]) -> List[QueryResult]:
         """
@@ -218,15 +243,17 @@ class QueryProcessor:
         if query_length == 0:
             return []
 
-        # Get documents containing any query term
+        # Get documents containing any query term and build posting lookups
         candidate_docs = set()
-        term_entries = {}
+        term_postings_by_doc = {}  # {term: {doc_id: posting}}
 
         for term in set(terms):
             entry = self.indexer.get_inverted_index_entry(term)
             if entry:
-                term_entries[term] = entry
-                candidate_docs.update(p.doc_id for p in entry.postings)
+                # Create fast lookup dict for this term's postings
+                postings_dict = {p.doc_id: p for p in entry.postings}
+                term_postings_by_doc[term] = postings_dict
+                candidate_docs.update(postings_dict.keys())
 
         # Calculate cosine similarity for each document
         results = []
@@ -239,16 +266,14 @@ class QueryProcessor:
             if not doc_record:
                 continue
 
-            # For cosine similarity, we need the full document vector
-            # Here we'll use a simplified approach with just the query terms
+            # Fast lookup: O(1) instead of O(n) for each term
             for term in query_vector:
-                entry = term_entries.get(term)
-                if entry:
-                    for posting in entry.postings:
-                        if posting.doc_id == doc_id:
-                            doc_vector[term] = posting.tf_idf
-                            doc_length_squared += posting.tf_idf * posting.tf_idf
-                            break
+                if term in term_postings_by_doc:
+                    postings_dict = term_postings_by_doc[term]
+                    if doc_id in postings_dict:
+                        posting = postings_dict[doc_id]
+                        doc_vector[term] = posting.tf_idf
+                        doc_length_squared += posting.tf_idf * posting.tf_idf
 
             if doc_length_squared == 0:
                 continue
@@ -264,7 +289,14 @@ class QueryProcessor:
             if cosine_sim > 0:
                 results.append(QueryResult(doc_id=doc_id, score=cosine_sim))
 
-        return sorted(results, key=lambda x: x.score, reverse=True)
+        # Store total count before limiting
+        self.last_total_count = len(results)
+
+        # Use heapq for large result sets (more efficient than full sort)
+        if len(results) > 100:
+            return heapq.nlargest(100, results, key=lambda x: x.score)
+        else:
+            return sorted(results, key=lambda x: x.score, reverse=True)
 
     def phrase_search(self, terms: List[str]) -> List[QueryResult]:
         """
@@ -319,7 +351,14 @@ class QueryProcessor:
                 avg_score = total_score / len(terms)
                 results.append(QueryResult(doc_id=doc_id, score=avg_score))
 
-        return sorted(results, key=lambda x: x.score, reverse=True)
+        # Store total count before limiting
+        self.last_total_count = len(results)
+
+        # Use heapq for large result sets (more efficient than full sort)
+        if len(results) > 100:
+            return heapq.nlargest(100, results, key=lambda x: x.score)
+        else:
+            return sorted(results, key=lambda x: x.score, reverse=True)
 
     def process_query(self, query: str) -> List[QueryResult]:
         """

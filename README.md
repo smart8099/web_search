@@ -6,20 +6,64 @@ A comprehensive information retrieval system implementing HTML document indexing
 
 ## 🚀 Quick Start
 
-### Run the Applications
+### Prerequisites
 ```bash
-# GUI version with Google-style interface (recommended)
-python3 gui_app.py
+# Install required dependencies
+pip install beautifulsoup4 lxml streamlit
 
-# Console version (always works)
+# Ensure you have the corpus files in the project directory:
+# - Jan.zip (for Part 1 & 2)
+# - rhf.zip (for Part 3 with spider)
+```
+
+### How to Run
+
+#### Option 1: Web Interface (Streamlit) - **RECOMMENDED**
+```bash
+streamlit run app_web.py
+```
+- Modern browser-based interface
+- Supports both Jan.zip and rhf.zip corpora
+- Integrated spider for rhf.zip crawling
+- Real-time statistics and clickable results
+- Access at: http://localhost:8501
+
+#### Option 2: Console Application (Part 3)
+```bash
+python3 main_part3.py
+```
+- Runs breadth-first spider on rhf.zip
+- Builds inverted index with anchor texts
+- Interactive search with relevance ranking
+- Performance metrics displayed
+
+#### Option 3: Tkinter GUI (Legacy)
+```bash
+python3 gui_app.py
+```
+- Google-style interface
+- Requires tkinter installation
+
+#### Option 4: Original Console (Part 1)
+```bash
 python3 console_app.py
 ```
+- Simple interactive search
+- Works with Jan.zip
 
-### Option 3: Run Tests
+#### Option 5: Run Tests
 ```bash
 python3 run_tests.py
-# Comprehensive test suite with 97.7% success rate
 ```
+- Comprehensive test suite with 97.7% success rate
+
+#### Option 6: Performance Benchmarking
+```bash
+python3 test_performance.py rhf.zip rhf/index.html
+```
+- Benchmarks spider crawling and indexing speed
+- Displays detailed performance metrics
+- Tests search query performance
 
 ## 📋 Project Requirements
 
@@ -92,6 +136,7 @@ class GoogleResultCard:
 
 ## 📊 Performance Metrics
 
+### Part 1 & 2 (Jan.zip)
 | Metric | Value |
 |--------|--------|
 | **Files indexed** | 31 HTML files |
@@ -100,6 +145,17 @@ class GoogleResultCard:
 | **Memory usage** | ~10-15MB |
 | **Startup time** | ~1-2 seconds |
 | **Test coverage** | 97.7% (42/43 tests) |
+
+### Part 3 (rhf.zip) - **OPTIMIZED**
+| Metric | Before | After | Speedup |
+|--------|--------|-------|---------|
+| **Total time** | 576s (9.6 min) | **191s (3.2 min)** | **3.0x faster** |
+| **Spider crawling** | 576s | **5.10s** | **113x faster** |
+| **Indexing** | N/A | 185.58s | Parallel |
+| **Pages crawled** | 9,359 | 9,359 | - |
+| **Unique words** | 57,756 | 57,756 | - |
+| **Crawl speed** | 16 pages/sec | **1,834 pages/sec** | **115x faster** |
+| **Architecture** | Sequential | Chunked + Parallel | - |
 
 ## 🧪 Testing
 
